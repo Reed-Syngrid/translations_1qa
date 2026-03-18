@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff version="1.2">
+  <file source-language="en" target-language="ru">
+    <body>
+      <trans-unit id="1" resname="Error contents">
+        <source>Error contents</source>
+        <target>Содержимое ошибки</target>
+        <context-group purpose="information">
+          <context context-type="source">#: app/file.jsx:1
+✨ AI Context
+Error contents is a filter input placeholder.
+✨ 🔚</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="2" resname="To pick some data, you'll need to add some first">
+        <source>To pick some data, you'll need to add some first</source>
+        <target>Чтобы выбрать данные, сначала нужно добавить их</target>
+      </trans-unit>
+      <trans-unit id="3" resname="Hello {name}">
+        <source>Hello {name}</source>
+        <target>Привет {name}</target>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>
+

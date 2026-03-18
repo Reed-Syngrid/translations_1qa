@@ -1,0 +1,6 @@
+msgid,source_en,ai_context,translation_text_po,accuracy_score_po,capitalization_score_po,placeholder_score_po,naturalness_score_po,final_score_po,translation_text_xliff,accuracy_score_xliff,capitalization_score_xliff,placeholder_score_xliff,naturalness_score_xliff,final_score_xliff,placeholder_diagnostics,error_reason
+Failed to unresolve comment,Failed to unresolve comment,"""This string is used as the error toast message shown when “reopening” (unresolving) a comment fails in the comments UI.
+
+- Location: `frontend/src/metabase/comments/components/Discussion/Discussion.tsx` (inside the `Discussion` React component), in the `handleReopenComment` function.
+- Trigger: the API call `updateComment({ id: comment.id, is_resolved: false })` returns an `error`.
+- UI: a toast is displayed via `sendToast` with `icon: """"warning_triangle_filled""""` and `iconColor: """"warning""""` and `message: t`Failed to unresolve comment``.""",Не удалось отменить комментарий,0,1,1,0,0,"Не удалось снять отметку ""решено"" с комментария",1,1,1,1,1,,

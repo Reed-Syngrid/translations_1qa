@@ -1,0 +1,9 @@
+msgid "Error contents"
+msgstr "Содержимое ошибки"
+
+msgid "To pick some data, you'll need to add some first"
+msgstr "Чтобы выбрать данные, сначала нужно добавить их"
+
+msgid "Hello {name}"
+msgstr "Привет {name}"
+

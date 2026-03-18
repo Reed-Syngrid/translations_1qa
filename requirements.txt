@@ -1,0 +1,6 @@
+openai
+polib
+pytest
+python-dotenv
+ruff
+

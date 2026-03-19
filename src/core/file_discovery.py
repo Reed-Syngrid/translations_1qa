@@ -42,12 +42,18 @@ def _collect_files(root: str, extension: str) -> list[str]:
 
 def discover_language_files(po_root: str, xliff_root: str, language_code: str) -> DiscoveryResult:
     target = normalize_locale(language_code)
+    base_target = target.split("-")[0]
     po_candidates = _collect_files(po_root, ".po")
     xliff_candidates = _collect_files(xliff_root, ".xliff")
     po_debug = [(p, _extract_lang_from_filename(p) or "<none>") for p in po_candidates]
     xliff_debug = [(p, _extract_lang_from_filename(p) or "<none>") for p in xliff_candidates]
+    # Prefer exact match; if none, fall back to base language (e.g. es-ES -> es).
     po_files = [p for p, code in po_debug if code == target]
     xliff_files = [p for p, code in xliff_debug if code == target]
+    if not po_files and base_target and base_target != target:
+        po_files = [p for p, code in po_debug if code == base_target]
+    if not xliff_files and base_target and base_target != target:
+        xliff_files = [p for p, code in xliff_debug if code == base_target]
     return DiscoveryResult(
         po_files=sorted(po_files),
         xliff_files=sorted(xliff_files),

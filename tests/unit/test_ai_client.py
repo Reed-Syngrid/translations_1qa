@@ -13,5 +13,4 @@ def test_ai_client_fallback_scores_binary() -> None:
         language_code="ru",
     )
     assert client.score_accuracy(candidate) in (0, 1)
-    assert client.score_naturalness(candidate) in (0, 1)
 

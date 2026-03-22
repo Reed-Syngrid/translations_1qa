@@ -11,10 +11,8 @@ def test_cli_generates_csv(tmp_path: Path) -> None:
             "ru",
             "--limit",
             "2",
-            "--po-root",
-            "tests/fixtures",
-            "--xliff-root",
-            "tests/fixtures",
+            "--inputs-root",
+            "tests/fixtures/inputs",
             "--output",
             str(out),
         ]
@@ -23,5 +21,6 @@ def test_cli_generates_csv(tmp_path: Path) -> None:
     assert out.exists()
     content = out.read_text(encoding="utf-8")
     assert "msgid,source_en,ai_context,translation_text_po" in content
+    assert "accuracy_ai_po" in content
     assert "translation_text_xliff" in content
 

@@ -1,3 +1,10 @@
+"""
+Locale normalization and legacy discovery of .po / .xliff under separate roots.
+
+The main CLI uses ``inputs_loader.load_language_inputs`` (single ``inputs/{lang}/`` folder).
+This module remains for ``normalize_locale`` and any older tooling/tests.
+"""
+
 import os
 import re
 from dataclasses import dataclass

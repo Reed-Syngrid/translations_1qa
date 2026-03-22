@@ -6,16 +6,25 @@ import sys
 import time
 from datetime import datetime
 
+from pathlib import Path
+
 from src.core.ai_client import AIClient
+from src.core.benchmark import (
+    BenchmarkLoadError,
+    human_accuracy_for_source,
+    load_benchmark_csv,
+    resolve_benchmark_csv_path,
+    stale_benchmark_msgids,
+)
 from src.core.config import load_env
-from src.core.file_discovery import discover_language_files
+from src.core.file_discovery import normalize_locale
+from src.core.inputs_loader import load_language_inputs
 from src.core.matching import sample_msgids, shared_msgids
-from src.core.models import RunConfig, TranslationCandidate
+from src.core.models import BenchmarkRow, RunConfig, TranslationCandidate
 from src.core.output import write_results_csv
-from src.core.po_parser import merge_po_files
 from src.core.run_report import build_report
 from src.core.scoring import evaluate_candidate
-from src.core.xliff_parser import merge_xliff_files
+from src.core.summary_report import find_critical_discrepancies, print_benchmark_summary
 
 
 def _default_output(lang: str) -> str:
@@ -25,13 +34,13 @@ def _default_output(lang: str) -> str:
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Evaluate translation quality across .po and .xliff."
+        description="Evaluate translation quality across .po and .xliff under inputs/{lang}/."
     )
     parser.add_argument(
         "--lang",
         "-l",
         required=True,
-        help="Language code, e.g. ru, fr, de, zh-CN.",
+        help="Language code, e.g. ru, fr, de, es-ES, zh-TW.",
     )
     parser.add_argument(
         "--limit",
@@ -41,16 +50,21 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Max number of shared strings.",
     )
     parser.add_argument(
-        "--po-root",
-        default=r"C:\metabase_translations\metabase_v0_57_15\metabase-0.57.15\locales",
+        "--inputs-root",
+        default="inputs",
+        help="Root folder containing per-language subfolders (default: inputs, relative to cwd).",
     )
-    parser.add_argument("--xliff-root", default=r"C:\metabase_translations\Ai_translations")
     parser.add_argument("--output", default="")
     parser.add_argument("--model", default="gpt-5.4")
     parser.add_argument(
         "--verbose",
         action="store_true",
         help="Print progress information while evaluating strings.",
+    )
+    parser.add_argument(
+        "--use-benchmark",
+        action="store_true",
+        help="Join Russian human benchmark CSV (only with --lang ru).",
     )
     return parser.parse_args(argv)
 
@@ -67,55 +81,92 @@ def main(argv: list[str] | None = None) -> int:
         print("Error: --limit must be a positive integer.", flush=True)
         return 2
 
+    if args.use_benchmark and normalize_locale(args.lang) != "ru":
+        print(
+            "Error: --use-benchmark is only supported for --lang ru (Russian benchmark).",
+            flush=True,
+        )
+        return 2
+
     output = args.output or _default_output(args.lang)
+    if args.output and os.path.isfile(output):
+        print(
+            "Error: output file already exists. Pick a new path or remove the file "
+            "(previous runs are never auto-deleted; FR-005).",
+            flush=True,
+        )
+        return 8
+
     config = RunConfig(
         language_code=args.lang,
         sample_size=args.limit,
-        po_root=args.po_root,
-        xliff_root=args.xliff_root,
+        inputs_root=args.inputs_root,
         output_csv_path=output,
         openai_model=args.model,
+        use_benchmark=args.use_benchmark,
     )
     started_at = time.time()
-    discovery = discover_language_files(
-        config.po_root, config.xliff_root, config.language_code
-    )
+
+    try:
+        loaded = load_language_inputs(config.inputs_root, config.language_code)
+    except FileNotFoundError as e:
+        print(f"Error: {e}", flush=True)
+        return 3
+    except OSError as e:
+        print(f"Error loading inputs: {e}", flush=True)
+        return 3
+
     if args.verbose:
         print(
             f"[discover] language={config.language_code} "
-            f"po_candidates={len(discovery.po_debug)} "
-            f"xliff_candidates={len(discovery.xliff_debug)}"
-            ,
+            f"lang_dir={loaded.lang_dir} "
+            f"po_files={len(loaded.po_files)} "
+            f"xliff_files={len(loaded.xliff_files)} "
+            f"po_entries={len(loaded.po_map)} "
+            f"xliff_entries={len(loaded.xliff_map)}",
             flush=True,
         )
-    if not discovery.po_files:
+
+    if not loaded.po_files:
         print(
-            f"Error: no .po files found for language '{config.language_code}' "
-            f"in {config.po_root}"
-            ,
+            f"Error: no .po files found under {loaded.lang_dir}",
             flush=True,
         )
-        print("Debug: discovered .po candidates and inferred locales:", flush=True)
-        for path, code in discovery.po_debug:
-            print(f"  {path} -> {code}", flush=True)
         return 3
-    if not discovery.xliff_files:
+    if not loaded.xliff_files:
         print(
-            f"Error: no .xliff files found for language '{config.language_code}' "
-            f"in {config.xliff_root}"
-            ,
+            f"Error: no .xliff files found under {loaded.lang_dir}",
             flush=True,
         )
-        print("Debug: discovered .xliff candidates and inferred locales:", flush=True)
-        for path, code in discovery.xliff_debug:
-            print(f"  {path} -> {code}", flush=True)
         return 4
 
-    po_map = merge_po_files(discovery.po_files)
-    xliff_map = merge_xliff_files(discovery.xliff_files)
+    po_map = loaded.po_map
+    xliff_map = loaded.xliff_map
+
+    benchmark_map: dict[str, BenchmarkRow] | None = None
+    stale: list[str] = []
+    if config.use_benchmark:
+        bench_path = resolve_benchmark_csv_path(Path(config.inputs_root) / "ru")
+        try:
+            benchmark_map = load_benchmark_csv(bench_path)
+        except BenchmarkLoadError as e:
+            print(f"Error loading benchmark: {e}", flush=True)
+            return 6
+        input_union = set(po_map.keys()) | set(xliff_map.keys())
+        stale = stale_benchmark_msgids(benchmark_map, input_union)
+        if args.verbose:
+            print(
+                f"[benchmark] path={bench_path} rows={len(benchmark_map)} "
+                f"stale_msgids={len(stale)}",
+                flush=True,
+            )
+
     shared = shared_msgids(po_map, xliff_map)
     if not shared:
-        print("Error: no shared msgids across .po and .xliff files.", flush=True)
+        print(
+            "Error: no shared msgids across .po and .xliff after removing blank translations.",
+            flush=True,
+        )
         return 5
     selected = sample_msgids(shared, config.sample_size)
     if args.verbose:
@@ -128,6 +179,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.verbose:
             print(f"[eval] {idx}/{len(selected)} msgid={msgid!r}", flush=True)
         for source, text in (("po", po_translation), ("xliff", xliff_translation)):
+            # FR-014: inputs_loader drops blanks; guard here so we never score empty strings.
+            if not str(text).strip():
+                continue
             candidate = TranslationCandidate(
                 msgid=msgid,
                 source_en=msgid,
@@ -136,20 +190,23 @@ def main(argv: list[str] | None = None) -> int:
                 ai_context=ai_context,
                 language_code=config.language_code,
             )
-            results.append(evaluate_candidate(candidate, ai))
+            b_row = benchmark_map.get(msgid) if benchmark_map else None
+            acc_human = human_accuracy_for_source(b_row, source)
+            results.append(evaluate_candidate(candidate, ai, accuracy_human=acc_human))
 
     write_results_csv(config.output_csv_path, results)
     report = build_report(results, started_at)
     print(f"Wrote CSV: {config.output_csv_path}", flush=True)
     print(
         f"Rows={report.total_rows}, FailedRows={report.failed_rows}, "
-        f"DurationSec={report.duration_seconds:.2f}"
-        ,
+        f"DurationSec={report.duration_seconds:.2f}",
         flush=True,
     )
+    if config.use_benchmark:
+        crit = find_critical_discrepancies(results)
+        print_benchmark_summary(stale, crit)
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

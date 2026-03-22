@@ -21,7 +21,7 @@ def parse_po_file(path: str) -> dict[str, str]:
     try:
         import polib  # type: ignore
 
-        po = polib.pofile(path)
+        po = polib.pofile(path, encoding="utf-8")
         return {entry.msgid: entry.msgstr for entry in po if entry.msgid}
     except Exception:
         with open(path, "r", encoding="utf-8") as f:

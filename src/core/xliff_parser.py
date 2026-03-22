@@ -35,7 +35,8 @@ def _extract_ai_context(trans_unit: ET.Element) -> str:
 
 
 def parse_xliff_file(path: str) -> dict[str, tuple[str, str]]:
-    tree = ET.parse(path)
+    with open(path, encoding="utf-8") as fh:
+        tree = ET.parse(fh)
     root = tree.getroot()
     result: dict[str, tuple[str, str]] = {}
     for node in root.iter():
